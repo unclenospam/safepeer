@@ -1,0 +1,13 @@
+{
+  "name": "safepeer-signaling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebRTC signaling server for Safepeer",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.65.0"
+  }
+}

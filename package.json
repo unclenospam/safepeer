@@ -1,0 +1,11 @@
+{
+  "name": "safepeer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Encrypted P2P chat via WebRTC — safepeer.io",
+  "scripts": {
+    "dev": "cd worker && npx wrangler dev",
+    "deploy:worker": "cd worker && npm run deploy",
+    "deploy": "npm run deploy:worker"
+  }
+}

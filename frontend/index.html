@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Safepeer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ═══ Login / Join View ═══ -->
+    <div id="login-view" class="login-view">
+        <div class="login-card">
+            <h1 class="logo">Safe<span class="alt">peer</span></h1>
+            <p class="tagline">Encrypted peer-to-peer chat</p>
+
+            <div class="input-group">
+                <label for="display-name">Display Name</label>
+                <input type="text" id="display-name" placeholder="Enter your name" maxlength="32" autocomplete="off">
+            </div>
+
+            <div class="divider"><span>Join a Room</span></div>
+
+            <div class="input-group">
+                <label for="room-code">Room Code</label>
+                <input type="text" id="room-code" placeholder="XXXX-XXXX" maxlength="9" autocomplete="off" style="text-transform: uppercase; letter-spacing: 2px; font-size: 1.2em; text-align: center;">
+            </div>
+            <button id="join-btn" class="btn btn-primary">Join Room</button>
+
+            <div class="divider"><span>Or Create a Room</span></div>
+
+            <div class="input-group">
+                <label for="room-name">Room Name</label>
+                <input type="text" id="room-name" placeholder="my-room" maxlength="64" autocomplete="off">
+            </div>
+            <button id="create-btn" class="btn btn-secondary">Create Room</button>
+
+            <div id="login-error" class="error-msg" style="display:none;"></div>
+        </div>
+    </div>
+
+    <!-- ═══ Chat View ═══ -->
+    <div id="chat-view" class="chat-view" style="display:none;">
+        <!-- Sidebar -->
+        <div id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2 id="room-title">Room</h2>
+                <div id="room-code-display" class="room-code-badge"></div>
+            </div>
+            <div class="sidebar-section">
+                <h3>Channels</h3>
+                <ul id="channel-list" class="channel-list">
+                    <li class="channel active"># general</li>
+                </ul>
+            </div>
+            <div class="sidebar-section">
+                <h3>Members <span id="member-count" class="badge">0</span></h3>
+                <ul id="member-list" class="member-list"></ul>
+            </div>
+        </div>
+
+        <!-- Mobile sidebar toggle -->
+        <button id="sidebar-toggle" class="sidebar-toggle">&#9776;</button>
+
+        <!-- Main chat area -->
+        <div class="chat-main">
+            <div class="chat-header">
+                <span class="channel-name"># general</span>
+                <span id="connection-status" class="status-dot disconnected" title="Connecting..."></span>
+            </div>
+
+            <div id="messages" class="messages"></div>
+
+            <div class="chat-input-area">
+                <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
+                <button id="send-btn" class="btn btn-send">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
