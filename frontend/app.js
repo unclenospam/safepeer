@@ -10,6 +10,23 @@
     const ICE_SERVERS = [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        // Free TURN relay for NAT traversal when STUN fails
+        // (e.g. symmetric NAT, same-machine testing, restrictive firewalls)
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
     ];
 
     // ─── Image Transfer Constants ───
@@ -484,10 +501,12 @@
         switch (data.type) {
             case 'welcome':
                 myPeerId = data.peerId;
+                console.log('[Signaling] Welcome received. My peerId:', myPeerId, 'Existing members:', data.members);
                 // Initiate connections to all existing members
                 for (const member of (data.members || [])) {
                     peerNames.set(member.peerId, member.displayName);
                     // We are the newcomer — create offers to all existing peers
+                    console.log('[Signaling] Initiating P2P connection to', member.peerId, member.displayName);
                     createPeerConnection(member.peerId, true);
                 }
                 updateMemberList();
@@ -689,6 +708,7 @@
     }
 
     async function handleOffer(fromPeerId, sdp) {
+        console.log('[WebRTC] Received offer from', fromPeerId);
         const pc = createPeerConnection(fromPeerId, false);
 
         try {
@@ -696,6 +716,7 @@
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
 
+            console.log('[WebRTC] Sending answer to', fromPeerId);
             sendSignaling({
                 type: 'answer',
                 to: fromPeerId,
@@ -708,9 +729,13 @@
 
     async function handleAnswer(fromPeerId, sdp) {
         const peer = peers.get(fromPeerId);
-        if (!peer) return;
+        if (!peer) {
+            console.warn('[WebRTC] Received answer from unknown peer', fromPeerId);
+            return;
+        }
 
         try {
+            console.log('[WebRTC] Received answer from', fromPeerId);
             await peer.pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
         } catch(err) {
             console.error('Failed to handle answer from', fromPeerId, err);
