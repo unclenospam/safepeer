@@ -34,13 +34,13 @@ Browser A              Cloudflare Worker              Browser B
 
 ```
 safepeer/
-├── frontend/           Static site (Cloudflare Pages via Workers)
-│   ├── index.html      Login + chat UI
-│   ├── style.css       Dark theme
+├── frontend/           Static site (served via Cloudflare Workers assets)
+│   ├── index.html      Login + chat UI (semantic HTML, ARIA)
+│   ├── style.css       Dark theme (WCAG AA contrast)
 │   └── app.js          WebRTC mesh + signaling client
 ├── worker/             Cloudflare Worker (signaling server)
 │   ├── src/
-│   │   ├── index.js    API routes: create, join, room status
+│   │   ├── index.js    API routes, rate limiting, security headers
 │   │   └── room.js     Durable Object: room state + SDP/ICE relay
 │   ├── wrangler.toml   Worker config
 │   └── package.json
@@ -48,6 +48,36 @@ safepeer/
 │   └── deploy.yml      CI/CD: push to main → auto-deploy
 └── package.json        Dev scripts
 ```
+
+## Security
+
+### Server Hardening
+- **Security headers** on all responses: CSP (`script-src 'self'`, `frame-ancestors 'none'`), X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- **CORS restricted** to `safepeer.io` and `localhost` only (no wildcard)
+- **Rate limiting**: 10 join attempts / 5 room creates per IP per minute
+- **Per-peer rate limiting**: 30 messages per 10 seconds inside rooms
+- **Input validation**: display names sanitized (32 char max, control chars stripped), room codes length-checked before parsing
+- **Message size limits**: SDP 16KB, ICE candidates 2KB, chat text 4KB, total 64KB
+- **Room caps**: max 20 peers per room
+- **Error sanitization**: generic messages only, no internal state leakage
+
+### Encryption
+- **WebRTC DTLS**: all peer-to-peer DataChannels are encrypted at the transport layer
+- **No server access**: once peers connect via WebRTC, the signaling server cannot read messages
+- **Ephemeral rooms**: no data persisted, rooms evict when all peers disconnect
+
+### Room Code Security
+- 8 characters from a 30-char alphabet = ~656 billion possible codes
+- Combined with rate limiting, brute-force guessing is impractical
+
+## Accessibility
+
+WCAG 2.1 AA compliant:
+- **Semantic HTML**: `<main>`, `<aside>`, `<nav>`, proper heading hierarchy
+- **Screen reader support**: ARIA live regions announce messages, member join/leave, errors, and connection status changes
+- **Keyboard navigation**: full Tab support, skip link, Enter/Space on interactive elements
+- **Focus indicators**: visible `:focus-visible` outlines on all interactive elements
+- **Color contrast**: all text meets 4.5:1 minimum ratio on dark backgrounds
 
 ## Development
 
@@ -78,6 +108,7 @@ Runs entirely on Cloudflare's free tier:
 - **Durable Objects**: included, auto-hibernation
 - **STUN**: free via Google (no TURN = no relay costs)
 - **Rooms**: ephemeral — vanish when everyone leaves
+- **Peers per room**: 20 max (mesh topology)
 
 ## License
 
