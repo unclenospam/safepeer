@@ -5,7 +5,7 @@
 
     // ─── Configuration ───
     // Worker URL — update this after deployment, or leave empty for same-origin
-    const WORKER_URL = '';  // e.g., 'https://discord-alt-signaling.your-subdomain.workers.dev'
+    const WORKER_URL = '';  // Leave empty — same-origin when deployed to Cloudflare Workers
 
     const ICE_SERVERS = [
         { urls: 'stun:stun.l.google.com:19302' },
