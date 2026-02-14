@@ -15,7 +15,7 @@ export { Room } from './room.js';
 // ─── Security Headers ───
 // Applied to all responses to prevent XSS, clickjacking, and content sniffing.
 const SECURITY_HEADERS = {
-    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: ws:; frame-ancestors 'none';",
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: ws:; img-src 'self' blob:; frame-ancestors 'none';",
     'X-Frame-Options': 'DENY',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
