@@ -184,15 +184,23 @@
     async function sendImage(blob, fileName, mimeType) {
         // Check for open DataChannels
         var hasOpen = false;
+        var peerCount = 0;
+        var dcStates = [];
         for (var entry of peers) {
+            peerCount++;
             var peer = entry[1];
             if (peer.dataChannel && peer.dataChannel.readyState === 'open') {
                 hasOpen = true;
                 break;
             }
+            dcStates.push((peerNames.get(entry[0]) || entry[0]) + ': ' + (peer.dataChannel ? peer.dataChannel.readyState : 'no channel') + ' / ' + (peer.pc ? peer.pc.connectionState : 'no pc'));
         }
         if (!hasOpen) {
-            addSystemMessage('Image sending requires a peer-to-peer connection. No peers connected via P2P.');
+            if (peerCount === 0) {
+                addSystemMessage('No peers in the room. Image sending requires a peer-to-peer connection.');
+            } else {
+                addSystemMessage('P2P connection not established yet. Text uses server relay but images require a direct connection. Peer states: ' + dcStates.join(', '));
+            }
             return;
         }
 
@@ -544,9 +552,17 @@
         };
 
         pc.onconnectionstatechange = function() {
+            console.log('[WebRTC] Connection state for', peerId, ':', pc.connectionState);
             if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                if (pc.connectionState === 'failed') {
+                    addSystemMessage('P2P connection failed with ' + (peerNames.get(peerId) || peerId) + '. Chat will use server relay.');
+                }
                 handlePeerDisconnected(peerId);
             }
+        };
+
+        pc.oniceconnectionstatechange = function() {
+            console.log('[WebRTC] ICE state for', peerId, ':', pc.iceConnectionState);
         };
 
         if (isInitiator) {
@@ -555,9 +571,11 @@
             setupDataChannel(dc, peerId);
             peerState.dataChannel = dc;
 
+            console.log('[WebRTC] Creating offer for', peerId);
             pc.createOffer().then(function(offer) {
                 return pc.setLocalDescription(offer);
             }).then(function() {
+                console.log('[WebRTC] Sending offer to', peerId);
                 sendSignaling({
                     type: 'offer',
                     to: peerId,

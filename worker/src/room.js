@@ -102,15 +102,10 @@ export class Room {
         const pair = new WebSocketPair();
         const [client, server] = Object.values(pair);
 
-        // Accept the server side
-        this.state.acceptWebSocket(server);
-
         const peerId = 'peer-' + (this.nextId++);
 
-        // Store session info — we use tags for the hibernation API
-        server.serializeAttachment({ peerId, displayName });
-
-        // Build current member list for the welcome message
+        // Build current member list BEFORE accepting the new socket
+        // so the newcomer doesn't appear in their own member list
         const existingMembers = [];
         for (const ws of this.state.getWebSockets()) {
             const info = ws.deserializeAttachment();
@@ -121,6 +116,10 @@ export class Room {
                 });
             }
         }
+
+        // Accept the server side and store session info
+        this.state.acceptWebSocket(server);
+        server.serializeAttachment({ peerId, displayName });
 
         // Send welcome to the new peer (after they connect)
         server.send(JSON.stringify({
