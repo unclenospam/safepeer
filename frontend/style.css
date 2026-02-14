@@ -8,6 +8,48 @@ body {
     overflow: hidden;
 }
 
+/* ═══ Accessibility ═══ */
+.skip-link {
+    position: absolute;
+    top: -100%;
+    left: 0;
+    background: #5865f2;
+    color: #fff;
+    padding: 8px 16px;
+    z-index: 1000;
+    border-radius: 0 0 4px 0;
+    text-decoration: none;
+    font-weight: 600;
+}
+.skip-link:focus {
+    top: 0;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+
+/* Focus indicators for keyboard navigation */
+*:focus-visible {
+    outline: 2px solid #5865f2;
+    outline-offset: 2px;
+}
+.input-group input:focus-visible {
+    outline: 2px solid #5865f2;
+    outline-offset: 0;
+}
+.chat-input-area input:focus-visible {
+    outline: 2px solid #5865f2;
+    outline-offset: 0;
+}
+
 /* ═══ Login View ═══ */
 .login-view {
     display: flex;
@@ -39,7 +81,7 @@ body {
 
 .tagline {
     text-align: center;
-    color: #72767d;
+    color: #a0a4a8;
     font-size: 0.9em;
     margin-bottom: 24px;
 }
@@ -52,7 +94,7 @@ body {
     font-size: 0.8em;
     font-weight: 600;
     text-transform: uppercase;
-    color: #8e9297;
+    color: #b0b4b8;
     margin-bottom: 6px;
 }
 .input-group input {
@@ -74,7 +116,7 @@ body {
     display: flex;
     align-items: center;
     margin: 20px 0;
-    color: #72767d;
+    color: #a0a4a8;
     font-size: 0.8em;
     text-transform: uppercase;
     font-weight: 600;
@@ -164,8 +206,9 @@ body {
     letter-spacing: 1px;
     cursor: pointer;
 }
-.room-code-badge:hover::after {
-    content: ' (click to copy)';
+.room-code-badge:hover::after,
+.room-code-badge:focus::after {
+    content: ' (copy)';
     font-weight: 400;
     font-size: 0.85em;
 }
@@ -176,7 +219,7 @@ body {
 .sidebar-section h3 {
     font-size: 0.75em;
     text-transform: uppercase;
-    color: #72767d;
+    color: #a0a4a8;
     font-weight: 700;
     margin-bottom: 8px;
 }
@@ -196,7 +239,7 @@ body {
 .channel-list li {
     padding: 6px 8px;
     border-radius: 4px;
-    color: #8e9297;
+    color: #b0b4b8;
     cursor: pointer;
     font-size: 0.95em;
 }
@@ -311,7 +354,7 @@ body {
 }
 .msg-time {
     font-size: 0.75em;
-    color: #72767d;
+    color: #a0a4a8;
 }
 .msg-text {
     color: #dcddde;
@@ -320,7 +363,7 @@ body {
 }
 
 .system-message {
-    color: #72767d;
+    color: #a0a4a8;
     font-style: italic;
     padding: 4px 0;
     margin-bottom: 8px;
@@ -347,7 +390,7 @@ body {
     outline: none;
 }
 .chat-input-area input::placeholder {
-    color: #72767d;
+    color: #a0a4a8;
 }
 
 /* ═══ Scrollbar ═══ */

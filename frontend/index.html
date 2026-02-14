@@ -7,9 +7,14 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <a href="#message-input" class="skip-link">Skip to chat</a>
+
+    <!-- Screen reader announcements (assertive live region) -->
+    <div id="sr-announcements" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
+
     <!-- ═══ Login / Join View ═══ -->
-    <div id="login-view" class="login-view">
-        <div class="login-card">
+    <main id="login-view" class="login-view">
+        <div class="login-card" role="form" aria-label="Join or create a room">
             <h1 class="logo">Safe<span class="alt">peer</span></h1>
             <p class="tagline">Encrypted peer-to-peer chat — safepeer.io</p>
 
@@ -18,7 +23,7 @@
                 <input type="text" id="display-name" placeholder="Enter your name" maxlength="32" autocomplete="off">
             </div>
 
-            <div class="divider"><span>Join a Room</span></div>
+            <div class="divider" role="separator"><span>Join a Room</span></div>
 
             <div class="input-group">
                 <label for="room-code">Room Code</label>
@@ -26,7 +31,7 @@
             </div>
             <button id="join-btn" class="btn btn-primary">Join Room</button>
 
-            <div class="divider"><span>Or Create a Room</span></div>
+            <div class="divider" role="separator"><span>Or Create a Room</span></div>
 
             <div class="input-group">
                 <label for="room-name">Room Name</label>
@@ -34,47 +39,48 @@
             </div>
             <button id="create-btn" class="btn btn-secondary">Create Room</button>
 
-            <div id="login-error" class="error-msg" style="display:none;"></div>
+            <div id="login-error" class="error-msg" role="alert" aria-live="assertive" style="display:none;"></div>
         </div>
-    </div>
+    </main>
 
     <!-- ═══ Chat View ═══ -->
     <div id="chat-view" class="chat-view" style="display:none;">
         <!-- Sidebar -->
-        <div id="sidebar" class="sidebar">
+        <aside id="sidebar" class="sidebar" role="complementary" aria-label="Room info">
             <div class="sidebar-header">
                 <h2 id="room-title">Room</h2>
-                <div id="room-code-display" class="room-code-badge"></div>
+                <div id="room-code-display" class="room-code-badge" role="button" tabindex="0" aria-label="Copy room code"></div>
             </div>
-            <div class="sidebar-section">
+            <nav class="sidebar-section" aria-label="Channels">
                 <h3>Channels</h3>
-                <ul id="channel-list" class="channel-list">
-                    <li class="channel active"># general</li>
+                <ul id="channel-list" class="channel-list" role="list">
+                    <li class="channel active" role="listitem"># general</li>
                 </ul>
-            </div>
+            </nav>
             <div class="sidebar-section">
-                <h3>Members <span id="member-count" class="badge">0</span></h3>
-                <ul id="member-list" class="member-list"></ul>
+                <h3>Members <span id="member-count" class="badge" aria-label="Member count">0</span></h3>
+                <ul id="member-list" class="member-list" role="list" aria-label="Room members"></ul>
             </div>
-        </div>
+        </aside>
 
         <!-- Mobile sidebar toggle -->
-        <button id="sidebar-toggle" class="sidebar-toggle">&#9776;</button>
+        <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar" aria-expanded="false">&#9776;</button>
 
         <!-- Main chat area -->
-        <div class="chat-main">
+        <main class="chat-main">
             <div class="chat-header">
                 <span class="channel-name"># general</span>
-                <span id="connection-status" class="status-dot disconnected" title="Connecting..."></span>
+                <span id="connection-status" class="status-dot disconnected" role="status" aria-live="polite" aria-label="Connection status: connecting"></span>
             </div>
 
-            <div id="messages" class="messages"></div>
+            <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Chat messages"></div>
 
             <div class="chat-input-area">
+                <label for="message-input" class="sr-only">Type a message</label>
                 <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
-                <button id="send-btn" class="btn btn-send">Send</button>
+                <button id="send-btn" class="btn btn-send" aria-label="Send message">Send</button>
             </div>
-        </div>
+        </main>
     </div>
 
     <script src="app.js"></script>

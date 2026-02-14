@@ -41,6 +41,15 @@
     const sidebarToggle = document.getElementById('sidebar-toggle');
     const sidebar = document.getElementById('sidebar');
 
+    // ─── Accessibility: Screen Reader Announcements ───
+    function announce(text) {
+        var el = document.getElementById('sr-announcements');
+        if (el) {
+            el.textContent = '';
+            setTimeout(function() { el.textContent = text; }, 50);
+        }
+    }
+
     // ─── Color Generation (for avatars) ───
     const COLORS = [
         '#5865f2', '#3ba55d', '#faa61a', '#ed4245', '#eb459e',
@@ -359,7 +368,9 @@
         chatView.style.display = 'flex';
         roomTitle.textContent = 'Room';
         roomCodeDisplay.textContent = code;
+        roomCodeDisplay.setAttribute('aria-label', 'Room code: ' + code + '. Press Enter to copy.');
         messageInput.focus();
+        announce('Joined room ' + code);
     }
 
     function addChatMessage(sender, text, timestamp) {
@@ -370,7 +381,7 @@
         var time = timestamp ? new Date(timestamp * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
 
         div.innerHTML =
-            '<div class="msg-avatar" style="background:' + color + '">' + nameInitial(sender) + '</div>' +
+            '<div class="msg-avatar" role="img" aria-label="' + escapeHtml(sender) + '" style="background:' + color + '">' + nameInitial(sender) + '</div>' +
             '<div class="msg-content">' +
                 '<div class="msg-header">' +
                     '<span class="msg-name" style="color:' + color + '">' + escapeHtml(sender) + '</span>' +
@@ -386,9 +397,11 @@
     function addSystemMessage(text) {
         var div = document.createElement('div');
         div.className = 'system-message';
+        div.setAttribute('role', 'status');
         div.textContent = text;
         messagesDiv.appendChild(div);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        announce(text);
     }
 
     function updateMemberList() {
@@ -411,10 +424,11 @@
         var li = document.createElement('li');
         var color = nameColor(name);
         var statusClass = isConnected ? 'connected' : 'disconnected';
+        var statusLabel = isConnected ? 'connected' : 'connecting';
         li.innerHTML =
-            '<div class="avatar" style="background:' + color + '">' + nameInitial(name) + '</div>' +
+            '<div class="avatar" role="img" aria-label="' + escapeHtml(name) + '" style="background:' + color + '">' + nameInitial(name) + '</div>' +
             '<span>' + escapeHtml(name) + '</span>' +
-            '<span class="status-dot ' + statusClass + '" style="width:8px;height:8px;margin-left:auto;"></span>';
+            '<span class="status-dot ' + statusClass + '" style="width:8px;height:8px;margin-left:auto;" aria-label="' + statusLabel + '"></span>';
         memberList.appendChild(li);
     }
 
@@ -430,18 +444,22 @@
         if (anyP2P) {
             connectionStatus.className = 'status-dot connected';
             connectionStatus.title = 'P2P Connected';
+            connectionStatus.setAttribute('aria-label', 'Connection status: peer-to-peer connected');
         } else if (ws && ws.readyState === WebSocket.OPEN) {
             connectionStatus.className = 'status-dot connected';
             connectionStatus.title = 'Signaling Connected';
+            connectionStatus.setAttribute('aria-label', 'Connection status: signaling connected');
         } else {
             connectionStatus.className = 'status-dot disconnected';
             connectionStatus.title = 'Disconnected';
+            connectionStatus.setAttribute('aria-label', 'Connection status: disconnected');
         }
     }
 
     function showError(msg) {
         loginError.textContent = msg;
         loginError.style.display = 'block';
+        announce('Error: ' + msg);
         setTimeout(function() { loginError.style.display = 'none'; }, 5000);
     }
 
@@ -525,16 +543,24 @@
         this.value = val;
     });
 
-    // Copy room code on click
-    roomCodeDisplay.addEventListener('click', function() {
-        navigator.clipboard.writeText(this.textContent).then(function() {
+    // Copy room code on click or keyboard
+    function copyRoomCode() {
+        navigator.clipboard.writeText(roomCodeDisplay.textContent).then(function() {
             addSystemMessage('Room code copied to clipboard!');
         });
+    }
+    roomCodeDisplay.addEventListener('click', copyRoomCode);
+    roomCodeDisplay.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            copyRoomCode();
+        }
     });
 
     // Mobile sidebar toggle
     sidebarToggle.addEventListener('click', function() {
-        sidebar.classList.toggle('open');
+        var isOpen = sidebar.classList.toggle('open');
+        sidebarToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     });
 
     // Close sidebar on message area click (mobile)
