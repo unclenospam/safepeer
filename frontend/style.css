@@ -565,4 +565,32 @@ body {
     .chat-header {
         padding-left: 52px;
     }
+    /* Ensure attach button stays visible and tappable on mobile */
+    .chat-input-area {
+        padding: 8px 10px;
+        gap: 6px;
+    }
+    .btn-attach {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        font-size: 1.1em;
+    }
+    .btn-send {
+        padding: 8px 14px;
+        font-size: 0.9em;
+    }
+    /* Image messages scale down on mobile */
+    .msg-image {
+        max-width: 260px;
+        max-height: 200px;
+    }
+    /* Preview card fits small screens */
+    .image-preview-card {
+        padding: 16px;
+        margin: 12px;
+    }
+    #preview-img {
+        max-height: 200px;
+    }
 }
