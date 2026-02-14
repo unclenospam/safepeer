@@ -12,6 +12,65 @@ import { generateRoomCode, parseRoomCode, formatRoomCode } from './room.js';
 
 export { Room } from './room.js';
 
+// ─── Rate Limiter ───
+// Sliding window per IP. Protects against brute-force room code guessing.
+// Note: Workers may run across multiple isolates, so this is per-isolate.
+// Still effective — an attacker hits the same isolate for many sequential requests.
+
+const WINDOW_MS = 60_000; // 1 minute
+const JOIN_LIMIT = 10;    // max join attempts per IP per window
+const CREATE_LIMIT = 5;   // max room creations per IP per window
+
+class RateLimiter {
+    constructor(limit) {
+        this.limit = limit;
+        this.clients = new Map(); // ip → { count, windowStart }
+    }
+
+    isAllowed(ip) {
+        const now = Date.now();
+        const entry = this.clients.get(ip);
+
+        // Prune expired entries periodically (every 100 checks)
+        if (this.clients.size > 100) {
+            for (const [key, val] of this.clients) {
+                if (now - val.windowStart > WINDOW_MS) this.clients.delete(key);
+            }
+        }
+
+        if (!entry || now - entry.windowStart > WINDOW_MS) {
+            // New window
+            this.clients.set(ip, { count: 1, windowStart: now });
+            return true;
+        }
+
+        if (entry.count >= this.limit) {
+            return false; // Rate limited
+        }
+
+        entry.count++;
+        return true;
+    }
+}
+
+const joinLimiter = new RateLimiter(JOIN_LIMIT);
+const createLimiter = new RateLimiter(CREATE_LIMIT);
+
+function getClientIP(request) {
+    return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+}
+
+function rateLimitResponse(corsHeaders) {
+    return new Response(JSON.stringify({ error: 'Too many requests. Try again later.' }), {
+        status: 429,
+        headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Retry-After': '60',
+        },
+    });
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
@@ -29,15 +88,23 @@ export default {
             return new Response(null, { status: 204, headers: corsHeaders });
         }
 
+        const clientIP = getClientIP(request);
+
         try {
             // POST /api/create — Create a new room
             if (path === '/api/create' && request.method === 'POST') {
+                if (!createLimiter.isAllowed(clientIP)) {
+                    return rateLimitResponse(corsHeaders);
+                }
                 return await handleCreate(request, env, corsHeaders);
             }
 
             // GET /api/join/:code — WebSocket upgrade for signaling
             const joinMatch = path.match(/^\/api\/join\/([A-Za-z0-9-]+)$/);
             if (joinMatch && request.method === 'GET') {
+                if (!joinLimiter.isAllowed(clientIP)) {
+                    return rateLimitResponse(corsHeaders);
+                }
                 return await handleJoin(request, env, joinMatch[1]);
             }
 
