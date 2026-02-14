@@ -76,32 +76,11 @@
             <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Chat messages"></div>
 
             <div class="chat-input-area">
-                <button id="attach-btn" class="btn btn-attach" aria-label="Attach image" type="button">&#128206;</button>
-                <input type="file" id="file-input" accept="image/*" class="sr-only" aria-hidden="true">
                 <label for="message-input" class="sr-only">Type a message</label>
                 <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
                 <button id="send-btn" class="btn btn-send" aria-label="Send message">Send</button>
             </div>
-
-            <!-- Image preview dialog -->
-            <div id="image-preview" class="image-preview-overlay" style="display:none;" role="dialog" aria-label="Image preview" aria-modal="true">
-                <div class="image-preview-card">
-                    <h3>Send Image</h3>
-                    <img id="preview-img" alt="Preview of image to send">
-                    <div id="preview-info" class="preview-info"></div>
-                    <div class="preview-actions">
-                        <button id="preview-cancel" class="btn btn-secondary">Cancel</button>
-                        <button id="preview-send" class="btn btn-primary">Send</button>
-                    </div>
-                </div>
-            </div>
         </main>
-
-        <!-- Lightbox for full-size images -->
-        <div id="lightbox" class="lightbox-overlay" style="display:none;" role="dialog" aria-label="Full size image" aria-modal="true" tabindex="-1">
-            <button id="lightbox-close" class="lightbox-close" aria-label="Close image">&times;</button>
-            <img id="lightbox-img" alt="Full size image">
-        </div>
     </div>
 
     <script src="app.js"></script>

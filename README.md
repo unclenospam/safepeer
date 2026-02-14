@@ -28,25 +28,7 @@ Browser A              Cloudflare Worker              Browser B
 - **Frontend** — vanilla JS, no build step, no frameworks
 - **Signaling** — Cloudflare Worker + Durable Object (ephemeral rooms, zero persistence)
 - **Transport** — WebRTC DataChannels with DTLS encryption
-- **NAT traversal** — Google STUN servers + free TURN relay (covers restrictive NATs and firewalls)
-
-## Features
-
-### Text Chat
-- Real-time messaging via P2P DataChannels
-- Server relay fallback when P2P hasn't connected yet
-- Timestamps, sender display names, system event announcements
-
-### Image Sharing
-- **P2P image transfer** — images sent directly between peers over DataChannels, never through the server
-- **Client-side compression** — large photos resized to max 1920px and JPEG-compressed (quality stepping from 0.85 down to 0.3) to stay under 1MB
-- **Binary chunking protocol** — images split into 64KB chunks with binary headers for reliable transfer
-- **Three ways to send**: click the 📎 button, drag & drop onto the chat area, or paste from clipboard (Ctrl+V)
-- **Preview before sending** — see the image and file info before confirming
-- **Lightbox viewer** — click any image in chat to view full-size, close with Escape or X
-- **GIF support** — animated GIFs pass through without recompression to preserve animation
-- **Supported formats**: JPEG, PNG, GIF, WebP, and any other format your browser supports
-- **5MB raw file limit**, compressed to ≤1MB before transfer
+- **NAT traversal** — Google STUN servers (free, works ~85% of networks)
 
 ## Project Structure
 
@@ -55,7 +37,7 @@ safepeer/
 ├── frontend/           Static site (served via Cloudflare Workers assets)
 │   ├── index.html      Login + chat UI (semantic HTML, ARIA)
 │   ├── style.css       Dark theme (WCAG AA contrast, mobile responsive)
-│   └── app.js          WebRTC mesh, signaling client, image transfer
+│   └── app.js          WebRTC mesh + signaling client
 ├── worker/             Cloudflare Worker (signaling server)
 │   ├── src/
 │   │   ├── index.js    API routes, rate limiting, security headers
@@ -70,7 +52,7 @@ safepeer/
 ## Security
 
 ### Server Hardening
-- **Security headers** on all responses: CSP (`script-src 'self'`, `img-src 'self' blob:`, `frame-ancestors 'none'`), X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- **Security headers** on all responses: CSP (`script-src 'self'`, `frame-ancestors 'none'`), X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
 - **CORS restricted** to `safepeer.io` and `localhost` only (no wildcard)
 - **Rate limiting**: 10 join attempts / 5 room creates per IP per minute
 - **Per-peer rate limiting**: 30 messages per 10 seconds inside rooms
@@ -81,9 +63,8 @@ safepeer/
 
 ### Encryption
 - **WebRTC DTLS**: all peer-to-peer DataChannels are encrypted at the transport layer
-- **No server access**: once peers connect via WebRTC, the signaling server cannot read messages or images
+- **No server access**: once peers connect via WebRTC, the signaling server cannot read messages
 - **Ephemeral rooms**: no data persisted, rooms evict when all peers disconnect
-- **Images never touch the server**: image data flows exclusively over P2P DataChannels
 
 ### Room Code Security
 - 8 characters from a 30-char alphabet = ~656 billion possible codes
@@ -97,8 +78,7 @@ WCAG 2.1 AA compliant:
 - **Keyboard navigation**: full Tab support, skip link, Enter/Space on interactive elements
 - **Focus indicators**: visible `:focus-visible` outlines on all interactive elements
 - **Color contrast**: all text meets 4.5:1 minimum ratio on dark backgrounds
-- **Image accessibility**: descriptive alt text on all images, lightbox with keyboard dismiss (Escape)
-- **Mobile responsive**: touch-friendly controls, optimized image sizing, collapsible sidebar
+- **Mobile responsive**: collapsible sidebar, touch-friendly controls
 
 ## Development
 
@@ -127,10 +107,9 @@ Deploys automatically via GitHub Actions on push to `main`.
 Runs entirely on Cloudflare's free tier:
 - **Workers**: 100K requests/day
 - **Durable Objects**: included, auto-hibernation
-- **NAT traversal**: Google STUN + free TURN relay servers for broad network compatibility
+- **STUN**: free via Google (no TURN = no relay costs)
 - **Rooms**: ephemeral — vanish when everyone leaves
 - **Peers per room**: 20 max (mesh topology)
-- **Images**: 5MB raw max, compressed to ≤1MB, transferred as 64KB chunks over P2P
 
 ## License
 
