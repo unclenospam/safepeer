@@ -12,6 +12,34 @@ import { generateRoomCode, parseRoomCode, formatRoomCode } from './room.js';
 
 export { Room } from './room.js';
 
+// ─── Security Headers ───
+// Applied to all responses to prevent XSS, clickjacking, and content sniffing.
+const SECURITY_HEADERS = {
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: ws:; frame-ancestors 'none';",
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'microphone=(), camera=(), geolocation=()',
+};
+
+// ─── Allowed Origins ───
+const ALLOWED_ORIGINS = [
+    'https://safepeer.io',
+    'https://www.safepeer.io',
+    'https://safepeer-signaling.sjestus.workers.dev',
+];
+
+function getCorsHeaders(request) {
+    const origin = request.headers.get('Origin') || '';
+    // In development (localhost), allow it; in production, restrict to known origins
+    const isAllowed = ALLOWED_ORIGINS.includes(origin) || origin.startsWith('http://localhost');
+    return {
+        'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    };
+}
+
 // ─── Rate Limiter ───
 // Sliding window per IP. Protects against brute-force room code guessing.
 // Note: Workers may run across multiple isolates, so this is per-isolate.
@@ -64,6 +92,7 @@ function rateLimitResponse(corsHeaders) {
     return new Response(JSON.stringify({ error: 'Too many requests. Try again later.' }), {
         status: 429,
         headers: {
+            ...SECURITY_HEADERS,
             ...corsHeaders,
             'Content-Type': 'application/json',
             'Retry-After': '60',
@@ -71,21 +100,40 @@ function rateLimitResponse(corsHeaders) {
     });
 }
 
+// Helper: build response with security + CORS headers
+function secureJsonResponse(body, status, corsHeaders) {
+    return new Response(JSON.stringify(body), {
+        status,
+        headers: {
+            ...SECURITY_HEADERS,
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
+// ─── Display Name Validation ───
+// Strip control characters, limit length, allow Unicode letters/numbers/spaces/dashes
+const MAX_DISPLAY_NAME = 32;
+function sanitizeDisplayName(raw) {
+    if (!raw || typeof raw !== 'string') return 'Anonymous';
+    // Strip control characters and trim
+    const cleaned = raw.replace(/[\x00-\x1f\x7f]/g, '').trim();
+    if (cleaned.length === 0) return 'Anonymous';
+    return cleaned.slice(0, MAX_DISPLAY_NAME);
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
         const path = url.pathname;
 
-        // CORS headers for cross-origin requests
-        const corsHeaders = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-        };
+        // Dynamic CORS: only allow known origins
+        const corsHeaders = getCorsHeaders(request);
 
         // Handle CORS preflight
         if (request.method === 'OPTIONS') {
-            return new Response(null, { status: 204, headers: corsHeaders });
+            return new Response(null, { status: 204, headers: { ...SECURITY_HEADERS, ...corsHeaders } });
         }
 
         const clientIP = getClientIP(request);
@@ -116,12 +164,10 @@ export default {
 
             // Non-API routes: let assets handle static files,
             // or return 404 for unknown API paths
-            return new Response('Not Found', { status: 404, headers: corsHeaders });
+            return new Response('Not Found', { status: 404, headers: { ...SECURITY_HEADERS, ...corsHeaders } });
         } catch (err) {
-            return new Response(JSON.stringify({ error: err.message }), {
-                status: 500,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            // Don't leak internal error details to clients
+            return secureJsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
         }
     },
 };
@@ -130,6 +176,12 @@ export default {
  * Create a new room with a generated room code.
  */
 async function handleCreate(request, env, corsHeaders) {
+    // Reject oversized request bodies (max 1KB for create)
+    const contentLength = parseInt(request.headers.get('Content-Length') || '0', 10);
+    if (contentLength > 1024) {
+        return secureJsonResponse({ error: 'Request too large' }, 413, corsHeaders);
+    }
+
     let body = {};
     try {
         body = await request.json();
@@ -137,7 +189,7 @@ async function handleCreate(request, env, corsHeaders) {
         // OK — display_name will default
     }
 
-    const displayName = (body.display_name || 'Host').slice(0, 32);
+    const displayName = sanitizeDisplayName(body.display_name || 'Host');
     const roomCode = generateRoomCode();
     const canonical = parseRoomCode(roomCode);
 
@@ -145,37 +197,27 @@ async function handleCreate(request, env, corsHeaders) {
     // This ensures the same code always maps to the same DO instance
     const roomId = env.ROOM.idFromName(canonical);
 
-    // "Touch" the DO so it exists (it will be fully initialized on first WS connect)
-    // We don't need to call it here — the DO is created lazily on first fetch
-
-    return new Response(JSON.stringify({
-        room_code: roomCode,
-        canonical,
-    }), {
-        status: 200,
-        headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json',
-        },
-    });
+    return secureJsonResponse({ room_code: roomCode, canonical }, 200, corsHeaders);
 }
 
 /**
  * WebSocket upgrade — connects to the Room Durable Object for signaling.
  */
 async function handleJoin(request, env, codeParam) {
+    // Early length check to prevent regex DoS on long inputs
+    if (codeParam.length > 20) {
+        return secureJsonResponse({ error: 'Invalid room code' }, 400, {});
+    }
+
     const canonical = parseRoomCode(codeParam);
     if (!canonical) {
-        return new Response(JSON.stringify({ error: 'Invalid room code format' }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-        });
+        return secureJsonResponse({ error: 'Invalid room code' }, 400, {});
     }
 
     // Check for WebSocket upgrade
     const upgradeHeader = request.headers.get('Upgrade');
     if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
-        return new Response('Expected WebSocket upgrade', { status: 426 });
+        return new Response('Expected WebSocket upgrade', { status: 426, headers: SECURITY_HEADERS });
     }
 
     // Route to the Durable Object for this room code
@@ -183,9 +225,9 @@ async function handleJoin(request, env, codeParam) {
     const roomStub = env.ROOM.get(roomId);
 
     // Forward the request to the Durable Object
-    // Pass display name as query parameter
+    // Sanitize display name before passing to DO
     const url = new URL(request.url);
-    const name = url.searchParams.get('name') || 'Anonymous';
+    const name = sanitizeDisplayName(url.searchParams.get('name'));
     const doUrl = new URL(`https://room.internal/?name=${encodeURIComponent(name)}`);
 
     return roomStub.fetch(new Request(doUrl.toString(), {
@@ -197,23 +239,19 @@ async function handleJoin(request, env, codeParam) {
  * Check if a room exists and get member count.
  */
 async function handleRoomStatus(env, codeParam, corsHeaders) {
-    const canonical = parseRoomCode(codeParam);
-    if (!canonical) {
-        return new Response(JSON.stringify({ error: 'Invalid room code format' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+    if (codeParam.length > 20) {
+        return secureJsonResponse({ error: 'Invalid room code' }, 400, corsHeaders);
     }
 
-    // We can't easily check DO state without connecting,
-    // so just return that the code format is valid.
-    // The actual room existence is verified on WebSocket connect.
-    return new Response(JSON.stringify({
+    const canonical = parseRoomCode(codeParam);
+    if (!canonical) {
+        return secureJsonResponse({ error: 'Invalid room code' }, 400, corsHeaders);
+    }
+
+    // Don't reveal whether room is active — just validate format
+    return secureJsonResponse({
         room_code: formatRoomCode(canonical),
         canonical,
         valid: true,
-    }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    }, 200, corsHeaders);
 }

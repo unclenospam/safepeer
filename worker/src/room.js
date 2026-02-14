@@ -27,6 +27,7 @@ export function generateRoomCode() {
  */
 export function parseRoomCode(input) {
     if (!input || typeof input !== 'string') return null;
+    if (input.length > 20) return null; // Quick reject oversized input
     const cleaned = input.replace(/[-\s]/g, '').toUpperCase();
     if (cleaned.length !== 8) return null;
     for (const ch of cleaned) {
@@ -42,6 +43,15 @@ export function formatRoomCode(canonical) {
     return canonical.slice(0, 4) + '-' + canonical.slice(4);
 }
 
+// ─── Security Constants ───
+const MAX_MESSAGE_SIZE = 65_536;   // 64KB max WebSocket message
+const MAX_SDP_SIZE = 16_384;       // 16KB max SDP offer/answer
+const MAX_ICE_SIZE = 2_048;        // 2KB max ICE candidate
+const MAX_CHAT_TEXT = 4_096;       // 4KB max chat message text
+const MAX_PEERS_PER_ROOM = 20;     // Max concurrent peers
+const PEER_MSG_LIMIT = 30;         // Max messages per peer per window
+const PEER_MSG_WINDOW = 10_000;    // 10 second window
+
 // ─── Durable Object: Room ───
 
 export class Room {
@@ -51,11 +61,42 @@ export class Room {
         // Map<WebSocket, { peerId: string, displayName: string }>
         this.sessions = new Map();
         this.nextId = 1;
+        // Per-peer rate limiting: peerId → { count, windowStart }
+        this.peerRates = new Map();
+    }
+
+    /**
+     * Check per-peer message rate limit. Returns true if allowed.
+     */
+    isPeerAllowed(peerId) {
+        const now = Date.now();
+        const entry = this.peerRates.get(peerId);
+
+        if (!entry || now - entry.windowStart > PEER_MSG_WINDOW) {
+            this.peerRates.set(peerId, { count: 1, windowStart: now });
+            return true;
+        }
+
+        if (entry.count >= PEER_MSG_LIMIT) {
+            return false;
+        }
+
+        entry.count++;
+        return true;
     }
 
     async fetch(request) {
         const url = new URL(request.url);
-        const displayName = url.searchParams.get('name') || 'Anonymous';
+        const displayName = (url.searchParams.get('name') || 'Anonymous').slice(0, 32);
+
+        // Enforce max peers per room
+        const currentPeers = this.state.getWebSockets().length;
+        if (currentPeers >= MAX_PEERS_PER_ROOM) {
+            return new Response(JSON.stringify({ error: 'Room is full' }), {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
 
         // Create WebSocket pair
         const pair = new WebSocketPair();
@@ -102,43 +143,73 @@ export class Room {
      * Called when a WebSocket message is received (Hibernation API).
      */
     async webSocketMessage(ws, message) {
+        // ─── Size check: reject oversized messages early ───
+        if (typeof message === 'string' && message.length > MAX_MESSAGE_SIZE) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Message too large' }));
+            return;
+        }
+
         let data;
         try {
             data = JSON.parse(message);
         } catch {
-            ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
+            ws.send(JSON.stringify({ type: 'error', message: 'Invalid message' }));
             return;
         }
 
         const senderInfo = ws.deserializeAttachment();
         if (!senderInfo) return;
 
+        // ─── Per-peer rate limiting ───
+        if (!this.isPeerAllowed(senderInfo.peerId)) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Rate limited. Slow down.' }));
+            return;
+        }
+
+        // ─── Validate message type is a known string ───
+        if (typeof data.type !== 'string') {
+            ws.send(JSON.stringify({ type: 'error', message: 'Invalid message' }));
+            return;
+        }
+
         switch (data.type) {
             case 'offer':
             case 'answer':
             case 'ice-candidate': {
-                // Forward signaling message to the target peer
+                // Validate 'to' field
                 const targetId = data.to;
-                if (!targetId) {
-                    ws.send(JSON.stringify({ type: 'error', message: 'Missing "to" field' }));
+                if (!targetId || typeof targetId !== 'string' || targetId.length > 32) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Invalid target' }));
                     return;
                 }
 
                 const targetWs = this.findPeerSocket(targetId);
                 if (!targetWs) {
-                    ws.send(JSON.stringify({ type: 'error', message: 'Peer not found: ' + targetId }));
+                    // Generic error — don't reveal whether peer exists
+                    ws.send(JSON.stringify({ type: 'error', message: 'Failed to deliver message' }));
                     return;
                 }
 
-                // Forward with sender info
+                // Forward with sender info, after validating size
                 const forwarded = {
                     type: data.type,
                     from: senderInfo.peerId,
                 };
 
                 if (data.type === 'offer' || data.type === 'answer') {
+                    // Validate SDP: must be a string within size limit
+                    if (typeof data.sdp !== 'string' || data.sdp.length > MAX_SDP_SIZE) {
+                        ws.send(JSON.stringify({ type: 'error', message: 'Invalid SDP' }));
+                        return;
+                    }
                     forwarded.sdp = data.sdp;
                 } else if (data.type === 'ice-candidate') {
+                    // Validate ICE candidate: must be object/null within size limit
+                    const candidateStr = JSON.stringify(data.candidate || '');
+                    if (candidateStr.length > MAX_ICE_SIZE) {
+                        ws.send(JSON.stringify({ type: 'error', message: 'Invalid ICE candidate' }));
+                        return;
+                    }
                     forwarded.candidate = data.candidate;
                 }
 
@@ -147,19 +218,26 @@ export class Room {
             }
 
             case 'chat': {
+                // Validate chat text: must be a non-empty string within size limit
+                if (typeof data.text !== 'string' || data.text.length === 0 || data.text.length > MAX_CHAT_TEXT) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Invalid message text' }));
+                    return;
+                }
+
                 // Relay fallback: broadcast chat message when DataChannel isn't available
                 this.broadcast({
                     type: 'chat-relay',
                     from: senderInfo.peerId,
                     sender: senderInfo.displayName,
-                    text: data.text,
+                    text: data.text.slice(0, MAX_CHAT_TEXT),
                     timestamp: Math.floor(Date.now() / 1000),
                 }, ws);
                 break;
             }
 
             default:
-                ws.send(JSON.stringify({ type: 'error', message: 'Unknown message type: ' + data.type }));
+                // Don't echo unknown type back — prevents reflection attacks
+                ws.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }));
         }
     }
 
@@ -169,6 +247,7 @@ export class Room {
     async webSocketClose(ws, code, reason, wasClean) {
         const info = ws.deserializeAttachment();
         if (info) {
+            this.peerRates.delete(info.peerId);
             this.broadcast({
                 type: 'peer-left',
                 peerId: info.peerId,
@@ -182,6 +261,7 @@ export class Room {
     async webSocketError(ws, error) {
         const info = ws.deserializeAttachment();
         if (info) {
+            this.peerRates.delete(info.peerId);
             this.broadcast({
                 type: 'peer-left',
                 peerId: info.peerId,
