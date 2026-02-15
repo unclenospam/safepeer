@@ -43,6 +43,18 @@ export function formatRoomCode(canonical) {
     return canonical.slice(0, 4) + '-' + canonical.slice(4);
 }
 
+/**
+ * Shard IPs across multiple ConnectionLimiter DO instances for scalability.
+ * Uses a simple hash to distribute across ~16 shards.
+ */
+function ipShard(ip) {
+    let hash = 0;
+    for (let i = 0; i < ip.length; i++) {
+        hash = ((hash << 5) - hash + ip.charCodeAt(i)) | 0;
+    }
+    return 'shard-' + (Math.abs(hash) % 16);
+}
+
 // ─── Security Constants ───
 const MAX_MESSAGE_SIZE = 65_536;   // 64KB max WebSocket message
 const MAX_SDP_SIZE = 16_384;       // 16KB max SDP offer/answer
@@ -51,6 +63,8 @@ const MAX_CHAT_TEXT = 4_096;       // 4KB max chat message text
 const MAX_PEERS_PER_ROOM = 20;     // Max concurrent peers
 const PEER_MSG_LIMIT = 30;         // Max messages per peer per window
 const PEER_MSG_WINDOW = 10_000;    // 10 second window
+const MAX_ROOMS_PER_IP = 10;       // Max concurrent rooms per IP
+const CONNECTION_TTL = 2 * 60 * 60_000; // 2 hours — auto-expire stale entries
 
 // ─── Durable Object: Room ───
 
@@ -88,6 +102,8 @@ export class Room {
     async fetch(request) {
         const url = new URL(request.url);
         const displayName = (url.searchParams.get('name') || 'Anonymous').slice(0, 32);
+        const clientIP = url.searchParams.get('ip') || 'unknown';
+        const roomCode = url.searchParams.get('room') || '';
 
         // Enforce max peers per room
         const currentPeers = this.state.getWebSockets().length;
@@ -118,8 +134,9 @@ export class Room {
         }
 
         // Accept the server side and store session info
+        // Include clientIP and roomCode for connection tracking on disconnect
         this.state.acceptWebSocket(server);
-        server.serializeAttachment({ peerId, displayName });
+        server.serializeAttachment({ peerId, displayName, clientIP, roomCode });
 
         // Send welcome to the new peer (after they connect)
         server.send(JSON.stringify({
@@ -251,6 +268,8 @@ export class Room {
                 type: 'peer-left',
                 peerId: info.peerId,
             }, ws);
+            // Notify ConnectionLimiter to decrement this IP's room count
+            await this.notifyDisconnect(info.clientIP, info.roomCode);
         }
     }
 
@@ -265,6 +284,26 @@ export class Room {
                 type: 'peer-left',
                 peerId: info.peerId,
             }, ws);
+            // Notify ConnectionLimiter to decrement this IP's room count
+            await this.notifyDisconnect(info.clientIP, info.roomCode);
+        }
+    }
+
+    /**
+     * Notify the ConnectionLimiter DO that a peer disconnected.
+     * Fire-and-forget — errors here shouldn't affect room operation.
+     */
+    async notifyDisconnect(clientIP, roomCode) {
+        if (!clientIP || !roomCode || clientIP === 'unknown') return;
+        try {
+            const limiterId = this.env.CONNECTION_LIMITER.idFromName(ipShard(clientIP));
+            const limiterStub = this.env.CONNECTION_LIMITER.get(limiterId);
+            await limiterStub.fetch(new Request('https://limiter.internal/disconnect', {
+                method: 'POST',
+                body: JSON.stringify({ ip: clientIP, roomCode }),
+            }));
+        } catch {
+            // Best-effort — TTL cleanup handles any missed disconnects
         }
     }
 
@@ -295,5 +334,99 @@ export class Room {
                 }
             }
         }
+    }
+}
+
+// ═══ ConnectionLimiter Durable Object — Per-IP Room Limit ═══
+//
+// Tracks active room connections per IP globally. Sharded by IP hash
+// (16 shards) to distribute load. Each shard handles a subset of IPs.
+// Uses TTL-based expiration as a safety net for missed disconnects.
+
+export class ConnectionLimiter {
+    constructor(state, env) {
+        this.state = state;
+        this.env = env;
+        // ip → Map<roomCode, joinedAt>
+        this.connections = new Map();
+    }
+
+    async fetch(request) {
+        const url = new URL(request.url);
+        const path = url.pathname;
+
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return new Response(JSON.stringify({ error: 'Invalid request' }), { status: 400 });
+        }
+
+        const ip = body.ip;
+        if (!ip || typeof ip !== 'string') {
+            return new Response(JSON.stringify({ error: 'Missing IP' }), { status: 400 });
+        }
+
+        switch (path) {
+            case '/check': {
+                // Check if this IP can join another room
+                this.pruneExpired(ip);
+                const rooms = this.connections.get(ip);
+                const count = rooms ? rooms.size : 0;
+                const allowed = count < MAX_ROOMS_PER_IP;
+                return new Response(JSON.stringify({ allowed, count, limit: MAX_ROOMS_PER_IP }), {
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            case '/connect': {
+                // Record that this IP joined a room
+                const roomCode = body.roomCode;
+                if (!roomCode || typeof roomCode !== 'string') {
+                    return new Response(JSON.stringify({ error: 'Missing roomCode' }), { status: 400 });
+                }
+                if (!this.connections.has(ip)) {
+                    this.connections.set(ip, new Map());
+                }
+                this.connections.get(ip).set(roomCode, Date.now());
+                return new Response(JSON.stringify({ ok: true }), {
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            case '/disconnect': {
+                // Record that this IP left a room
+                const roomCode = body.roomCode;
+                if (!roomCode) {
+                    return new Response(JSON.stringify({ error: 'Missing roomCode' }), { status: 400 });
+                }
+                const rooms = this.connections.get(ip);
+                if (rooms) {
+                    rooms.delete(roomCode);
+                    if (rooms.size === 0) this.connections.delete(ip);
+                }
+                return new Response(JSON.stringify({ ok: true }), {
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            default:
+                return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+        }
+    }
+
+    /**
+     * Remove stale entries older than CONNECTION_TTL for a specific IP.
+     */
+    pruneExpired(ip) {
+        const rooms = this.connections.get(ip);
+        if (!rooms) return;
+        const now = Date.now();
+        for (const [code, joinedAt] of rooms) {
+            if (now - joinedAt > CONNECTION_TTL) {
+                rooms.delete(code);
+            }
+        }
+        if (rooms.size === 0) this.connections.delete(ip);
     }
 }

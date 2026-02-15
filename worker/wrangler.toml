@@ -8,11 +8,17 @@ compatibility_date = "2024-12-01"
 directory = "../frontend"
 
 # Durable Objects handle WebRTC signaling per room
+# ConnectionLimiter tracks per-IP concurrent room connections
 [durable_objects]
 bindings = [
-    { name = "ROOM", class_name = "Room" }
+    { name = "ROOM", class_name = "Room" },
+    { name = "CONNECTION_LIMITER", class_name = "ConnectionLimiter" }
 ]
 
 [[migrations]]
 tag = "v1"
 new_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_classes = ["ConnectionLimiter"]

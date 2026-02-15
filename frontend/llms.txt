@@ -1,0 +1,30 @@
+# Safepeer
+
+> Encrypted peer-to-peer chat in your browser. No accounts, no servers storing messages.
+
+Safepeer is a private, encrypted chat application that connects users directly via WebRTC peer-to-peer connections. All messages and images are sent directly between browsers — the server only handles initial signaling to establish connections.
+
+## Features
+
+- End-to-end encrypted text messaging via WebRTC DataChannels
+- Image sharing (JPG, PNG, GIF, WebP) compressed and sent P2P
+- Multiple chat channels within a room
+- Message reactions and replies
+- Typing indicators
+- Custom user statuses
+- Room sharing via invite links
+- No accounts or sign-ups required
+- No message history stored on any server
+
+## How It Works
+
+1. Create a room to get a unique room code
+2. Share the code or invite link with others
+3. Peers connect directly via WebRTC (STUN-assisted NAT traversal)
+4. All chat messages and images flow peer-to-peer
+5. A lightweight signaling server on Cloudflare Workers handles only the initial connection setup
+
+## Links
+
+- Website: https://safepeer.io
+- Source: https://github.com/unclenospam/safepeer
