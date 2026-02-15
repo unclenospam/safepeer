@@ -483,16 +483,22 @@ body {
 .sidebar-toggle {
     display: none;
     position: fixed;
-    top: 10px;
-    left: 10px;
+    top: 0.5em;
+    left: 0.5em;
     z-index: 100;
     background: #5865f2;
     color: #fff;
     border: none;
-    border-radius: 4px;
-    padding: 8px 12px;
-    font-size: 1.2em;
+    border-radius: clamp(3px, 0.5vw, 6px);
+    padding: 0.35em 0.6em;
+    font-size: clamp(0.85rem, 2.5vw, 1.15rem);
+    line-height: 1;
     cursor: pointer;
+    width: clamp(28px, 8vw, 40px);
+    height: clamp(28px, 8vw, 40px);
+    display: none;
+    align-items: center;
+    justify-content: center;
 }
 
 /* ═══ Chat Main Area ═══ */
@@ -974,10 +980,10 @@ body {
         box-shadow: 4px 0 16px rgba(0,0,0,0.5);
     }
     .sidebar-toggle {
-        display: block;
+        display: flex;
     }
     .chat-header {
-        padding-left: 52px;
+        padding-left: calc(0.5em + clamp(28px, 8vw, 40px) + 0.5em);
     }
 }
 
