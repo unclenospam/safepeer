@@ -10,12 +10,12 @@
 
 import { generateRoomCode, parseRoomCode, formatRoomCode } from './room.js';
 
-export { Room } from './room.js';
+export { Room, ConnectionLimiter } from './room.js';
 
 // ─── Security Headers ───
 // Applied to all responses to prevent XSS, clickjacking, and content sniffing.
 const SECURITY_HEADERS = {
-    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: ws:; frame-ancestors 'none';",
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: ws:; img-src 'self' blob:; frame-ancestors 'none';",
     'X-Frame-Options': 'DENY',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -48,6 +48,7 @@ function getCorsHeaders(request) {
 const WINDOW_MS = 60_000; // 1 minute
 const JOIN_LIMIT = 10;    // max join attempts per IP per window
 const CREATE_LIMIT = 5;   // max room creations per IP per window
+const MAX_ROOMS_PER_IP = 10; // max concurrent room connections per IP
 
 class RateLimiter {
     constructor(limit) {
@@ -153,7 +154,7 @@ export default {
                 if (!joinLimiter.isAllowed(clientIP)) {
                     return rateLimitResponse(corsHeaders);
                 }
-                return await handleJoin(request, env, joinMatch[1]);
+                return await handleJoin(request, env, joinMatch[1], clientIP, corsHeaders);
             }
 
             // GET /api/room/:code — Check room status
@@ -203,15 +204,15 @@ async function handleCreate(request, env, corsHeaders) {
 /**
  * WebSocket upgrade — connects to the Room Durable Object for signaling.
  */
-async function handleJoin(request, env, codeParam) {
+async function handleJoin(request, env, codeParam, clientIP, corsHeaders) {
     // Early length check to prevent regex DoS on long inputs
     if (codeParam.length > 20) {
-        return secureJsonResponse({ error: 'Invalid room code' }, 400, {});
+        return secureJsonResponse({ error: 'Invalid room code' }, 400, corsHeaders);
     }
 
     const canonical = parseRoomCode(codeParam);
     if (!canonical) {
-        return secureJsonResponse({ error: 'Invalid room code' }, 400, {});
+        return secureJsonResponse({ error: 'Invalid room code' }, 400, corsHeaders);
     }
 
     // Check for WebSocket upgrade
@@ -220,19 +221,60 @@ async function handleJoin(request, env, codeParam) {
         return new Response('Expected WebSocket upgrade', { status: 426, headers: SECURITY_HEADERS });
     }
 
+    // ─── Per-IP concurrent room limit ───
+    // Uses a dedicated Durable Object to track connections globally (across isolates).
+    // Sharded by IP hash to distribute load — each shard handles a subset of IPs.
+    const limiterId = env.CONNECTION_LIMITER.idFromName(ipShard(clientIP));
+    const limiterStub = env.CONNECTION_LIMITER.get(limiterId);
+
+    const limitCheck = await limiterStub.fetch(new Request('https://limiter.internal/check', {
+        method: 'POST',
+        body: JSON.stringify({ ip: clientIP }),
+    }));
+    const limitResult = await limitCheck.json();
+
+    if (!limitResult.allowed) {
+        return secureJsonResponse({
+            error: `Too many active rooms. Maximum ${MAX_ROOMS_PER_IP} concurrent connections allowed.`,
+        }, 429, corsHeaders);
+    }
+
     // Route to the Durable Object for this room code
     const roomId = env.ROOM.idFromName(canonical);
     const roomStub = env.ROOM.get(roomId);
 
     // Forward the request to the Durable Object
-    // Sanitize display name before passing to DO
+    // Pass sanitized display name, client IP, and room code for connection tracking
     const url = new URL(request.url);
     const name = sanitizeDisplayName(url.searchParams.get('name'));
-    const doUrl = new URL(`https://room.internal/?name=${encodeURIComponent(name)}`);
+    const doUrl = new URL(`https://room.internal/?name=${encodeURIComponent(name)}&ip=${encodeURIComponent(clientIP)}&room=${encodeURIComponent(canonical)}`);
 
-    return roomStub.fetch(new Request(doUrl.toString(), {
+    const response = await roomStub.fetch(new Request(doUrl.toString(), {
         headers: request.headers,
     }));
+
+    // If room rejected (full, etc), don't record connection
+    if (response.status === 101) {
+        // Record the connection in the limiter DO
+        await limiterStub.fetch(new Request('https://limiter.internal/connect', {
+            method: 'POST',
+            body: JSON.stringify({ ip: clientIP, roomCode: canonical }),
+        }));
+    }
+
+    return response;
+}
+
+/**
+ * Shard IPs across multiple ConnectionLimiter DO instances for scalability.
+ * Uses a simple hash to distribute ~16 shards.
+ */
+function ipShard(ip) {
+    let hash = 0;
+    for (let i = 0; i < ip.length; i++) {
+        hash = ((hash << 5) - hash + ip.charCodeAt(i)) | 0;
+    }
+    return 'shard-' + (Math.abs(hash) % 16);
 }
 
 /**

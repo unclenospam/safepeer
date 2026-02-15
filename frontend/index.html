@@ -49,17 +49,62 @@
         <aside id="sidebar" class="sidebar" role="complementary" aria-label="Room info">
             <div class="sidebar-header">
                 <h2 id="room-title">Room</h2>
-                <div id="room-code-display" class="room-code-badge" role="button" tabindex="0" aria-label="Copy room code"></div>
+                <div class="room-code-row">
+                    <div id="room-code-display" class="room-code-badge" role="button" tabindex="0" aria-label="Copy room code"></div>
+                    <button id="share-btn" class="btn-share" aria-label="Share room invite link" title="Share room">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                            <polyline points="16 6 12 2 8 6"/>
+                            <line x1="12" y1="2" x2="12" y2="15"/>
+                        </svg>
+                        Share
+                    </button>
+                </div>
+                <div id="share-toast" class="share-toast" role="status" aria-live="polite"></div>
             </div>
+
+            <!-- Channels -->
             <nav class="sidebar-section" aria-label="Channels">
-                <h3>Channels</h3>
-                <ul id="channel-list" class="channel-list" role="list">
-                    <li class="channel active" role="listitem"># general</li>
-                </ul>
+                <div class="section-header-row">
+                    <h3>Channels</h3>
+                    <button id="add-channel-btn" class="btn-icon" aria-label="Create channel" title="Create channel">+</button>
+                </div>
+                <ul id="channel-list" class="channel-list" role="list" aria-label="Channel list"></ul>
+                <!-- Inline channel creation -->
+                <div id="new-channel-form" class="new-channel-form" style="display:none;">
+                    <span class="channel-hash">#</span>
+                    <input type="text" id="new-channel-input" placeholder="channel-name" maxlength="32" autocomplete="off">
+                </div>
             </nav>
+
+            <!-- Members -->
             <div class="sidebar-section">
                 <h3>Members <span id="member-count" class="badge" aria-label="Member count">0</span></h3>
                 <ul id="member-list" class="member-list" role="list" aria-label="Room members"></ul>
+            </div>
+
+            <!-- Mute toggle at bottom of sidebar -->
+            <div class="sidebar-footer">
+                <button id="mute-btn" class="btn-mute" aria-label="Toggle notification sounds" title="Mute/unmute sounds">
+                    <svg id="mute-icon-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    </svg>
+                    <svg id="mute-icon-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <line x1="23" y1="9" x2="17" y2="15"/>
+                        <line x1="17" y1="9" x2="23" y2="15"/>
+                    </svg>
+                </button>
+                <!-- Status picker -->
+                <button id="status-btn" class="btn-status" aria-label="Set your status" title="Set status">
+                    <span id="my-status-emoji"></span>
+                </button>
+                <div id="status-picker" class="status-picker" style="display:none;" role="dialog" aria-label="Pick a status">
+                    <div class="status-picker-grid" id="status-picker-grid"></div>
+                    <button id="clear-status-btn" class="btn-clear-status">Clear status</button>
+                </div>
             </div>
         </aside>
 
@@ -69,19 +114,55 @@
         <!-- Main chat area -->
         <main class="chat-main">
             <div class="chat-header">
-                <span class="channel-name"># general</span>
+                <span id="channel-name-display" class="channel-name"># general</span>
                 <span id="connection-status" class="status-dot disconnected" role="status" aria-live="polite" aria-label="Connection status: connecting"></span>
             </div>
 
             <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Chat messages"></div>
 
+            <!-- Typing indicator -->
+            <div id="typing-indicator" class="typing-indicator" role="status" aria-live="polite" style="display:none;">
+                <span class="typing-dots"><span></span><span></span><span></span></span>
+                <span id="typing-text"></span>
+            </div>
+
+            <!-- Reply preview bar -->
+            <div id="reply-bar" class="reply-bar" style="display:none;">
+                <span id="reply-preview"></span>
+                <button id="reply-cancel" class="btn-reply-cancel" aria-label="Cancel reply">&times;</button>
+            </div>
+
             <div class="chat-input-area">
+                <button id="attach-btn" class="btn btn-attach" aria-label="Attach image" type="button">&#x1F4CE;</button>
+                <input type="file" id="file-input" accept="image/jpeg,image/png,image/gif,image/webp,image/heic" class="sr-only" aria-hidden="true">
                 <label for="message-input" class="sr-only">Type a message</label>
                 <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
                 <button id="send-btn" class="btn btn-send" aria-label="Send message">Send</button>
             </div>
+
+            <!-- Image preview dialog -->
+            <div id="image-preview" class="image-preview-overlay" style="display:none;" role="dialog" aria-label="Image preview" aria-modal="true">
+                <div class="image-preview-card">
+                    <h3>Send Image</h3>
+                    <img id="preview-img" alt="Preview of image to send">
+                    <div id="preview-info" class="preview-info"></div>
+                    <div class="preview-actions">
+                        <button id="preview-cancel" class="btn btn-secondary">Cancel</button>
+                        <button id="preview-send" class="btn btn-primary">Send</button>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
+
+    <!-- Lightbox overlay -->
+    <div id="lightbox" class="lightbox-overlay" style="display:none;" role="dialog" aria-label="Full size image" aria-modal="true" tabindex="-1">
+        <button id="lightbox-close" class="lightbox-close" aria-label="Close image">&times;</button>
+        <img id="lightbox-img" alt="Full size image">
+    </div>
+
+    <!-- Reaction picker popup (positioned absolutely near clicked message) -->
+    <div id="reaction-picker" class="reaction-picker" style="display:none;" role="dialog" aria-label="Pick a reaction"></div>
 
     <script src="app.js"></script>
 </body>
