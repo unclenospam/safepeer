@@ -1,6 +1,12 @@
 /* ═══ Reset & Base ═══ */
+:root {
+    --app-height: 100dvh;
+}
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; }
+html, body {
+    height: 100vh;
+    height: 100dvh;
+}
 body {
     font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
     background: #36393f;
@@ -56,6 +62,8 @@ body {
     align-items: center;
     justify-content: center;
     height: 100vh;
+    height: 100dvh;
+    height: var(--app-height, 100dvh);
     background: linear-gradient(135deg, #1a1c20 0%, #2c2f33 50%, #23272a 100%);
 }
 
@@ -173,6 +181,8 @@ body {
 .chat-view {
     display: flex;
     height: 100vh;
+    height: 100dvh;
+    height: var(--app-height, 100dvh);
 }
 
 /* Sidebar */
@@ -938,6 +948,7 @@ body {
 #lightbox-img {
     max-width: 90vw;
     max-height: 90vh;
+    max-height: 90dvh;
     object-fit: contain;
 }
 
@@ -953,6 +964,8 @@ body {
         left: -260px;
         top: 0;
         height: 100vh;
+        height: 100dvh;
+        height: var(--app-height, 100dvh);
         z-index: 50;
         transition: left 0.3s ease;
     }
@@ -965,5 +978,12 @@ body {
     }
     .chat-header {
         padding-left: 52px;
+    }
+}
+
+/* ═══ Safe Area (notched devices) ═══ */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .chat-input-area {
+        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     }
 }

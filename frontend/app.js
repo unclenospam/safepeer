@@ -1268,4 +1268,25 @@
     checkUrlHash();
     window.addEventListener('hashchange', checkUrlHash);
 
+    // ─── Mobile Keyboard Avoidance ───
+    (function() {
+        if (!window.visualViewport) return;
+        var root = document.documentElement;
+        var initialHeight = window.visualViewport.height;
+
+        function onViewportResize() {
+            var vpHeight = window.visualViewport.height;
+            root.style.setProperty('--app-height', vpHeight + 'px');
+            // Auto-scroll messages when keyboard opens (>25% height reduction)
+            if (vpHeight < initialHeight * 0.75 && messagesDiv) {
+                requestAnimationFrame(function() {
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                });
+            }
+        }
+
+        window.visualViewport.addEventListener('resize', onViewportResize);
+        onViewportResize();
+    })();
+
 })();
